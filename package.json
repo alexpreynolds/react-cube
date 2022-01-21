@@ -1,0 +1,54 @@
+{
+  "name": "react-cube",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@testing-library/jest-dom": "^5.14.1",
+    "@testing-library/react": "^12.0.0",
+    "@testing-library/user-event": "^13.2.1",
+    "@types/jest": "^27.0.1",
+    "@types/multivariate-normal": "^0.1.0",
+    "@types/node": "^16.7.13",
+    "@types/pubsub-js": "^1.8.3",
+    "@types/react": "^17.0.20",
+    "@types/react-dom": "^17.0.9",
+    "@types/three": "^0.136.1",
+    "jsfive": "^0.3.6",
+    "multivariate-normal": "^0.1.2",
+    "pubsub-js": "^1.9.4",
+    "randomcolor": "^0.6.2",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
+    "react-idle-timer": "^4.6.4",
+    "react-scripts": "5.0.0",
+    "react-tooltip": "^4.2.21",
+    "three": "0.122.0",
+    "ts-debounce": "^4.0.0",
+    "typescript": "^4.4.2",
+    "web-vitals": "^2.1.0"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
