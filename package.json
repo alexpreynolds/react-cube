@@ -13,6 +13,7 @@
     "@types/react": "^17.0.20",
     "@types/react-dom": "^17.0.9",
     "@types/three": "^0.136.1",
+    "h5wasm": "^0.1.8",
     "jsfive": "^0.3.6",
     "multivariate-normal": "^0.1.2",
     "pubsub-js": "^1.9.4",

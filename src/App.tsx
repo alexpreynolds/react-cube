@@ -11,14 +11,12 @@ import MultivariateNormal from 'multivariate-normal';
 // import vertexShader from './shaders/vertex';
 
 // @ts-ignore
-// import * as hdf5 from 'jsfive/dist';
-import * as hdf5 from 'jsfive';
-// import * as hdf5 from 'h5wasm';
-// const hdf5 = require("h5wasm");
+import * as hdf5 from 'h5wasm';
 
 const randomColor = require('randomcolor');
 
 interface Props {}
+
 interface State {
   width: number,
   height: number,
@@ -30,6 +28,7 @@ interface State {
   idleTimerElapsed: number,
   tooltipInnerText: string,
   currentSelectedUUID: string,
+  currentSelectedAbsolutePointIndices: Set<number>,
 }
 
 class App extends React.Component<Props, State> {
@@ -39,6 +38,11 @@ class App extends React.Component<Props, State> {
   static readonly INTERSECTION_EVENT = 'INTERSECTION_EVENT';
   static readonly POINT_MESH_SCALE_DEFAULT = 1.5;
   static readonly POINT_MESH_SCALE_HIGHLIGHTED = App.POINT_MESH_SCALE_DEFAULT * 3;
+  static readonly RAW_UINT8_ELEMENTS_FOR_XYZ_FLOATS = 12;
+  static readonly RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT_POINTS = 3;
+  static readonly RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT = App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOATS / App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT_POINTS;
+  static readonly RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT_BUFFER = new ArrayBuffer(App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT);
+  static readonly RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT_BUFFER_VIEW = new DataView(App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT_BUFFER);
 
   private canvasRef = React.createRef<HTMLDivElement>(); // adds canvas to React component
   private tooltipRef = React.createRef<HTMLDivElement>();
@@ -56,7 +60,6 @@ class App extends React.Component<Props, State> {
   cubePointStyledGroup: THREE.Object3D;
   isDragging: boolean;
   previousMousePosition: { [key: string]: number };
-  currentSelectedAbsolutePointIndices: Set<number>;
 
   constructor(props: Props) {
     super(props);
@@ -87,9 +90,8 @@ class App extends React.Component<Props, State> {
       idleTimerElapsed: 0,
       tooltipInnerText: "",
       currentSelectedUUID: "",
+      currentSelectedAbsolutePointIndices: new Set<number>(),
     };
-
-    this.currentSelectedAbsolutePointIndices = new Set();
 
     // https://reactjs.org/docs/refs-and-the-dom.html
     this.canvasRef = React.createRef();
@@ -137,7 +139,8 @@ class App extends React.Component<Props, State> {
     this.cubePointStyledGroup = new THREE.Object3D();
   }
 
-  async componentDidMount() {
+  async componentDidMount(): Promise<void> {
+    const self = this;
     this.initializeScene();
     window.addEventListener('resize', this.handleResize);
     if (this.idleTimer) {
@@ -158,20 +161,44 @@ class App extends React.Component<Props, State> {
     }
     PubSub.subscribe(App.INTERSECTION_EVENT, this.handleIntersectionEvent);
 
+    //
+    // h5wasm
+    //
+
+    // var data =  [231, 27, 202, 64]; 
+    // var buf = new ArrayBuffer(4);
+    // var view = new DataView(buf);
+    // data.reduceRight(function (_, b, i) : any { view.setUint8(Math.abs(i - 3), b) }, data[3]); // little-endian
+    // var num = view.getFloat32(0);
+    // console.log(`num ${num}`); // 6.315906047821045 -> 6.315906
+
     await fetch("https://somebits.io/data.h5")
-      .then(function(response) { 
-        return response.arrayBuffer() 
+      .then(function(response) {
+        return response.arrayBuffer()
       })
       .then(function(buffer) {
-        const f = new hdf5.File(buffer, "data.h5");
-        console.log(`f.keys ${JSON.stringify(f.keys)}`);
+        hdf5.FS.writeFile("data.h5", new Uint8Array(buffer));
+        const f = new hdf5.File("data.h5", "r");
+        console.log(`f.keys ${JSON.stringify(f.keys())}`);
         const data = f.get('data');
-        console.log(`data.keys ${JSON.stringify(data.keys)}`);
+        console.log(`data.attrs ${JSON.stringify(data.attrs)}`);
+        console.log(`data.keys ${JSON.stringify(data.keys())}`);
         const dataGroup = data.get('tsg8n0ki');
-        console.log(`dataGroup.attrs ${JSON.stringify(dataGroup.attrs)}`);
+        const dataSlice : any[] = dataGroup.slice([[1, 2]])[0];
+        const dataSliceRawXyzUint8 : number[] = Object.values(dataSlice[0]);
+        const dataSliceRawXyZUint8IsLittleEndian = dataGroup.metadata.compound_type.members[0].littleEndian;
+        const dataSliceLabelIdx : number = dataSlice[1];
+        console.log(`dataSliceXyz ${JSON.stringify(self.sliceRawUint8XyzToXyz(dataSliceRawXyzUint8, dataSliceRawXyZUint8IsLittleEndian))}`);
+        // console.log(`dataGroup.metadata.compound_type.members[0].littleEndian ${JSON.stringify(dataGroup.metadata.compound_type.members[0].littleEndian, (key, value) =>
+        //   typeof value === 'bigint'
+        //       ? value.toString()
+        //       : value // return everything else unchanged
+        // )}`);
         const metadata = f.get('metadata');
         console.log(`metadata.keys ${JSON.stringify(metadata.keys)}`);
-        // console.log(`f ${JSON.stringify(f.get('entry').attrs)}`);
+        const groups = metadata.get('groups');
+        const group = groups.get('tsg8n0ki');
+        console.log(`metadata.groups['tsg8n0ki'].attrs ${JSON.stringify(group.attrs)}`);
       })
       .catch(err => {
         console.log(`err ${err}`);
@@ -180,6 +207,28 @@ class App extends React.Component<Props, State> {
 
   public componentWillUnmount() {
     PubSub.unsubscribe(App.INTERSECTION_EVENT);
+  }
+
+  public sliceRawUint8XyzToXyz = (rawXyz: number[], littleEndian : boolean) : number[] => {
+    const results = [];
+    const buffer = App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT_BUFFER;
+    const view = App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT_BUFFER_VIEW;
+    const points = App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT_POINTS;
+    if (littleEndian) {
+      for (let i = 0; i < points; i++) {
+        rawXyz.slice(i * App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT, (i + 1) * App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT).reduceRight(function (_, b, i) : any { view.setUint8(Math.abs(i - 3), b) }, rawXyz[points]);
+        const acc = parseFloat(view.getFloat32(0).toFixed(6));
+        results.push(acc);
+      }
+    }
+    else {
+      for (let i = 0; i < points; i++) {
+        rawXyz.slice(i * App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT, (i + 1) * App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT).reduceRight(function (_, b, i) : any { view.setUint8(i, b) }, rawXyz[0]);
+        const acc = parseFloat(view.getFloat32(0).toFixed(6));
+        results.push(acc);
+      }
+    }
+    return results;
   }
 
   public initializePointClouds = (scale: number) : any => {
@@ -496,18 +545,21 @@ class App extends React.Component<Props, State> {
   }
 
   public removeHighlightFromPoints = (): void => {
-    // console.log(`removeHighlightFromPoints`);
-    if (this.currentSelectedAbsolutePointIndices.size === 0) return;
-    // for (const index of this.currentSelectedAbsolutePointIndices) {
+    // console.log(`removeHighlightFromPoints | ${this.state.currentSelectedAbsolutePointIndices.size}`);
+    if (this.state.currentSelectedAbsolutePointIndices.size === 0) return;
+    const currentSelectedAbsolutePointIndices = Array.from(this.state.currentSelectedAbsolutePointIndices.values());
     for (
       let index = 0;
-      index < this.currentSelectedAbsolutePointIndices.size;
+      index < this.state.currentSelectedAbsolutePointIndices.size;
       index += 1
     ) {
-      this.removeHighlightFromPointByIndex(index);
-      this.currentSelectedAbsolutePointIndices.delete(index);
+      this.removeHighlightFromPointByIndex(currentSelectedAbsolutePointIndices[index]);
     }
-    this.renderScene();
+    this.setState({
+      currentSelectedAbsolutePointIndices: new Set<number>(),
+    }, () => {
+      this.renderScene();
+    })
   };
 
   public handleIntersectionEvent = (msg: string, data: any) : void => {
@@ -521,16 +573,19 @@ class App extends React.Component<Props, State> {
       const y = position.y.toPrecision(3);
       const z = position.z.toPrecision(3);
       // highlight and show tooltip
-      this.currentSelectedAbsolutePointIndices.add(absolutePointIndex);
-      this.setState({
-        currentSelectedUUID: uuid,
-        tooltipInnerText: `<span>x ${x}<br/>y ${y}<br/>z ${z}</span>`,
-      }, () => {
-        this.addHighlightToPointByIndex(absolutePointIndex);
-        tooltipRef.style.top = `${data.viewportOffsetY - 10}px`;
-        tooltipRef.style.left = `${data.viewportOffsetX - 10}px`;
-        ReactTooltip.show(tooltipRef);
-      });
+      if (!this.state.currentSelectedAbsolutePointIndices.has(absolutePointIndex)) {
+        const newCurrentSelectedAbsolutePointIndices = new Set(this.state.currentSelectedAbsolutePointIndices).add(absolutePointIndex);
+        this.setState({
+          currentSelectedAbsolutePointIndices: newCurrentSelectedAbsolutePointIndices,
+          currentSelectedUUID: uuid,
+          tooltipInnerText: `<span>x ${x}<br/>y ${y}<br/>z ${z}</span>`,
+        }, () => {
+          this.addHighlightToPointByIndex(absolutePointIndex);
+          tooltipRef.style.top = `${data.viewportOffsetY - 10}px`;
+          tooltipRef.style.left = `${data.viewportOffsetX - 10}px`;
+          ReactTooltip.show(tooltipRef);
+        });
+      }
     }
   }
 
