@@ -13,8 +13,6 @@ import MultivariateNormal from 'multivariate-normal';
 // @ts-ignore
 import * as hdf5 from 'h5wasm';
 
-const randomColor = require('randomcolor');
-
 interface Props {}
 
 interface State {
@@ -67,23 +65,23 @@ class App extends React.Component<Props, State> {
     this.idleTimer = null;
     this.idleTimerTimeout = 500;
 
-    const pointSets = Array(App.NUM_SETS);
-    for (let s = 0; s < App.NUM_SETS; s++) {
-      pointSets[s] = this.initializePointClouds(2*s + 5);
+    // const pointSets = Array(App.NUM_SETS);
+    // for (let s = 0; s < App.NUM_SETS; s++) {
+      // pointSets[s] = this.initializePointClouds(2*s + 5);
       // console.log(`pointSets[${s}] ${JSON.stringify(pointSets[s])}`);
-    }
-    const setColors = randomColor({
-      count: App.NUM_SETS,
-      luminosity: 'dark',
-      hue: 'random',
-      format: 'rgb',
-    });
+    // }
+    // const setColors = randomColor({
+    //   count: App.NUM_SETS,
+    //   luminosity: 'dark',
+    //   hue: 'random',
+    //   format: 'rgb',
+    // });
 
     this.state = {
       width: window.innerWidth,
       height: window.innerHeight,
-      pointSets: pointSets,
-      setColors: setColors,
+      pointSets: [],
+      setColors: [],
       idleTimerRemaining: this.idleTimerTimeout,
       idleTimerIsIdle: true,
       idleTimerLastActive: 0,
@@ -141,7 +139,7 @@ class App extends React.Component<Props, State> {
 
   async componentDidMount(): Promise<void> {
     const self = this;
-    this.initializeScene();
+    // this.initializeScene();
     window.addEventListener('resize', this.handleResize);
     if (this.idleTimer) {
       this.setState({
@@ -165,13 +163,6 @@ class App extends React.Component<Props, State> {
     // h5wasm
     //
 
-    // var data =  [231, 27, 202, 64]; 
-    // var buf = new ArrayBuffer(4);
-    // var view = new DataView(buf);
-    // data.reduceRight(function (_, b, i) : any { view.setUint8(Math.abs(i - 3), b) }, data[3]); // little-endian
-    // var num = view.getFloat32(0);
-    // console.log(`num ${num}`); // 6.315906047821045 -> 6.315906
-
     await fetch("https://somebits.io/data.h5")
       .then(function(response) {
         return response.arrayBuffer()
@@ -179,26 +170,78 @@ class App extends React.Component<Props, State> {
       .then(function(buffer) {
         hdf5.FS.writeFile("data.h5", new Uint8Array(buffer));
         const f = new hdf5.File("data.h5", "r");
-        console.log(`f.keys ${JSON.stringify(f.keys())}`);
-        const data = f.get('data');
-        console.log(`data.attrs ${JSON.stringify(data.attrs)}`);
-        console.log(`data.keys ${JSON.stringify(data.keys())}`);
-        const dataGroup = data.get('tsg8n0ki');
-        const dataSlice : any[] = dataGroup.slice([[1, 2]])[0];
-        const dataSliceRawXyzUint8 : number[] = Object.values(dataSlice[0]);
-        const dataSliceRawXyZUint8IsLittleEndian = dataGroup.metadata.compound_type.members[0].littleEndian;
-        const dataSliceLabelIdx : number = dataSlice[1];
-        console.log(`dataSliceXyz ${JSON.stringify(self.sliceRawUint8XyzToXyz(dataSliceRawXyzUint8, dataSliceRawXyZUint8IsLittleEndian))}`);
-        // console.log(`dataGroup.metadata.compound_type.members[0].littleEndian ${JSON.stringify(dataGroup.metadata.compound_type.members[0].littleEndian, (key, value) =>
-        //   typeof value === 'bigint'
-        //       ? value.toString()
-        //       : value // return everything else unchanged
-        // )}`);
-        const metadata = f.get('metadata');
-        console.log(`metadata.keys ${JSON.stringify(metadata.keys)}`);
-        const groups = metadata.get('groups');
-        const group = groups.get('tsg8n0ki');
-        console.log(`metadata.groups['tsg8n0ki'].attrs ${JSON.stringify(group.attrs)}`);
+        // console.log(`f.keys ${JSON.stringify(f.keys())}`);
+        const data = f.get('data') as hdf5.Group;
+        // console.log(`data.attrs ${JSON.stringify(data.attrs)}`);
+        // console.log(`data.keys ${JSON.stringify(data.keys())}`);
+        const dataGroup = data.get('tsg8n0ki') as hdf5.Dataset;
+        const dataSlice : any[] = dataGroup.slice([[0, ]]);
+        // console.log(`dataSlice ${JSON.stringify(dataSlice)}`);
+
+        const arrayColumn = (arr : Array<any>, n : number) => arr.map((x : any) => x[n] as any);
+        const dataPoints = arrayColumn(dataSlice, 0);
+        const dataPointClouds = arrayColumn(dataSlice, 1);
+        const dataPointSets = Array(dataPointClouds.length);
+        const rawPoints = [];
+        let maxX = Number.MIN_VALUE;
+        let minX = Number.MAX_VALUE;
+        let maxY = Number.MIN_VALUE;
+        let minY = Number.MAX_VALUE;
+        let maxZ = Number.MIN_VALUE;
+        let minZ = Number.MAX_VALUE;
+        for (let s = 0; s < dataPointClouds.length; s++) {
+          rawPoints.push({
+            x: dataPoints[s][0],
+            y: dataPoints[s][1],
+            z: dataPoints[s][2],
+          });
+          maxX = (dataPoints[s][0] > maxX) ? dataPoints[s][0] : maxX;
+          minX = (dataPoints[s][0] < minX) ? dataPoints[s][0] : minX;
+          maxY = (dataPoints[s][1] > maxY) ? dataPoints[s][1] : maxY;
+          minY = (dataPoints[s][1] < minY) ? dataPoints[s][1] : minY;
+          maxZ = (dataPoints[s][2] > maxZ) ? dataPoints[s][2] : maxZ;
+          minZ = (dataPoints[s][2] < minZ) ? dataPoints[s][2] : minZ;
+        }
+        const scale = 0;
+        const normalize = (val: number, max: number, min: number) : number => { return (val - min) / (max - min); }
+        maxX += scale * maxX;
+        minX -= Math.abs(scale * minX);
+        maxY += scale * maxY;
+        minY -= Math.abs(scale * minY);
+        maxZ += scale * maxZ;
+        minZ -= Math.abs(scale * minZ);
+        for (let i = 0; i < dataPointClouds.length; i++) {
+          const rawPoint = rawPoints[i];
+          const normalizedPoint = {
+            x: normalize(rawPoint.x, minX, maxX) - 0.5,
+            y: normalize(rawPoint.y, minY, maxY) - 0.5,
+            z: normalize(rawPoint.z, minZ, maxZ) - 0.5,
+          };
+          dataPointSets[i] = [normalizedPoint];
+        }
+
+        const metadata = f.get('metadata') as hdf5.Group;
+        // console.log(`metadata.keys ${JSON.stringify(metadata.keys())}`);
+        const groups = metadata.get('groups') as hdf5.Group;
+        const group = groups.get('tsg8n0ki') as hdf5.Group;
+        // console.log(`metadata.groups['tsg8n0ki'].attrs ${JSON.stringify(group.attrs)}`);
+        const groupLabels = group.get('labels') as hdf5.Dataset;
+        const rgbaLabelTuples = groupLabels.slice([[0, ]]) as [];
+        // console.log(`rgbaLabelTuples ${JSON.stringify(rgbaLabelTuples)}`);
+        const rgba = arrayColumn(rgbaLabelTuples, 0);
+        // console.log(`rgba ${JSON.stringify(rgba)}`);
+        const pointSetColors = Array(dataPointSets.length);
+        for (let i = 0; i < dataPointClouds.length; i++) {
+          pointSetColors[i] = `rgb(${rgba[i][0]}, ${rgba[i][1]}, ${rgba[i][2]})`;
+        }
+        // console.log(`pointSetColors ${JSON.stringify(pointSetColors)}`);
+
+        self.setState({
+          pointSets: dataPointSets,
+          setColors: pointSetColors,
+        }, () => {
+          self.initializeScene();
+        });
       })
       .catch(err => {
         console.log(`err ${err}`);
@@ -207,28 +250,6 @@ class App extends React.Component<Props, State> {
 
   public componentWillUnmount() {
     PubSub.unsubscribe(App.INTERSECTION_EVENT);
-  }
-
-  public sliceRawUint8XyzToXyz = (rawXyz: number[], littleEndian : boolean) : number[] => {
-    const results = [];
-    const buffer = App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT_BUFFER;
-    const view = App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT_BUFFER_VIEW;
-    const points = App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT_POINTS;
-    if (littleEndian) {
-      for (let i = 0; i < points; i++) {
-        rawXyz.slice(i * App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT, (i + 1) * App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT).reduceRight(function (_, b, i) : any { view.setUint8(Math.abs(i - 3), b) }, rawXyz[points]);
-        const acc = parseFloat(view.getFloat32(0).toFixed(6));
-        results.push(acc);
-      }
-    }
-    else {
-      for (let i = 0; i < points; i++) {
-        rawXyz.slice(i * App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT, (i + 1) * App.RAW_UINT8_ELEMENTS_FOR_XYZ_FLOAT).reduceRight(function (_, b, i) : any { view.setUint8(i, b) }, rawXyz[0]);
-        const acc = parseFloat(view.getFloat32(0).toFixed(6));
-        results.push(acc);
-      }
-    }
-    return results;
   }
 
   public initializePointClouds = (scale: number) : any => {
@@ -282,6 +303,7 @@ class App extends React.Component<Props, State> {
         z: normalize(rawPoint.z, minZ, maxZ) - 0.5,
       });
     }
+    // console.log(`normalizedPoints ${JSON.stringify(normalizedPoints)}`);
     return normalizedPoints;
   }
 
@@ -492,14 +514,14 @@ class App extends React.Component<Props, State> {
         32
       );
       let a = 0;
-      for (let s = 0; s < App.NUM_SETS; s++) {
+      for (let s = 0; s < this.state.pointSets.length; s++) {
         // https://threejs.org/docs/#api/en/materials/MeshToonMaterial
         let material = new THREE.MeshToonMaterial( {
           color: this.state.setColors[s],
           gradientMap: eighteenTone,
           dithering: true,
         });
-        for (let i = 0; i < App.NUM_POINTS_PER_SET; i++) {
+        for (let i = 0; i < 1; i++) {
           let point = this.state.pointSets[s][i];
           const mesh = new THREE.Mesh(geometry, material);
           mesh.position.x = point.x;
