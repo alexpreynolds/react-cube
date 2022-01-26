@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import numpy as np
-from numpy.core.fromnumeric import compress
 import umap
 import h5py
 import string
@@ -16,12 +15,12 @@ def uid():
   return ''.join(random.choices(alphabet, k=8))
 
 seed = 42
-samples = 100
+samples = 2500
 columns = 4
 np.random.seed(seed)
 datapoints = np.random.rand(samples, columns)
 
-with h5py.File("data.h5", "w") as f:
+with h5py.File("data_samples{}.h5".format(samples), "w") as f:
 
   '''
   - override number of default components from 2 to 3

@@ -163,18 +163,19 @@ class App extends React.Component<Props, State> {
     // h5wasm
     //
 
-    await fetch("https://somebits.io/data.h5")
+    await fetch("https://somebits.io/data_samples1000.h5")
       .then(function(response) {
         return response.arrayBuffer()
       })
       .then(function(buffer) {
+        const containerKey = "wxi5d0tv"; // will change with different container!
         hdf5.FS.writeFile("data.h5", new Uint8Array(buffer));
         const f = new hdf5.File("data.h5", "r");
-        // console.log(`f.keys ${JSON.stringify(f.keys())}`);
+        console.log(`f.keys ${JSON.stringify(f.keys())}`);
         const data = f.get('data') as hdf5.Group;
-        // console.log(`data.attrs ${JSON.stringify(data.attrs)}`);
-        // console.log(`data.keys ${JSON.stringify(data.keys())}`);
-        const dataGroup = data.get('tsg8n0ki') as hdf5.Dataset;
+        console.log(`data.attrs ${JSON.stringify(data.attrs)}`);
+        console.log(`data.keys ${JSON.stringify(data.keys())}`);
+        const dataGroup = data.get(containerKey) as hdf5.Dataset;
         const dataSlice : any[] = dataGroup.slice([[0, ]]);
         // console.log(`dataSlice ${JSON.stringify(dataSlice)}`);
 
@@ -223,8 +224,8 @@ class App extends React.Component<Props, State> {
         const metadata = f.get('metadata') as hdf5.Group;
         // console.log(`metadata.keys ${JSON.stringify(metadata.keys())}`);
         const groups = metadata.get('groups') as hdf5.Group;
-        const group = groups.get('tsg8n0ki') as hdf5.Group;
-        // console.log(`metadata.groups['tsg8n0ki'].attrs ${JSON.stringify(group.attrs)}`);
+        const group = groups.get(containerKey) as hdf5.Group;
+        // console.log(`metadata.groups[containerKey].attrs ${JSON.stringify(group.attrs)}`);
         const groupLabels = group.get('labels') as hdf5.Dataset;
         const rgbaLabelTuples = groupLabels.slice([[0, ]]) as [];
         // console.log(`rgbaLabelTuples ${JSON.stringify(rgbaLabelTuples)}`);
