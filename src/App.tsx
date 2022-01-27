@@ -19,6 +19,7 @@ interface State {
   width: number,
   height: number,
   pointSets: Array<Array<any>>,
+  rawPointSets: Array<any>,
   setColors: Array<number>,
   idleTimerRemaining: number,
   idleTimerIsIdle: boolean,
@@ -81,6 +82,7 @@ class App extends React.Component<Props, State> {
       width: window.innerWidth,
       height: window.innerHeight,
       pointSets: [],
+      rawPointSets: [],
       setColors: [],
       idleTimerRemaining: this.idleTimerTimeout,
       idleTimerIsIdle: true,
@@ -183,7 +185,8 @@ class App extends React.Component<Props, State> {
         const dataPoints = arrayColumn(dataSlice, 0);
         const dataPointClouds = arrayColumn(dataSlice, 1);
         const dataPointSets = Array(dataPointClouds.length);
-        const rawPoints = [];
+        const rawPoints = Array(dataPointClouds.length);
+        const rawDataPointSets = Array(dataPointClouds.length);
         let maxX = Number.MIN_VALUE;
         let minX = Number.MAX_VALUE;
         let maxY = Number.MIN_VALUE;
@@ -191,11 +194,13 @@ class App extends React.Component<Props, State> {
         let maxZ = Number.MIN_VALUE;
         let minZ = Number.MAX_VALUE;
         for (let s = 0; s < dataPointClouds.length; s++) {
-          rawPoints.push({
+          const rawPoint = {
             x: dataPoints[s][0],
             y: dataPoints[s][1],
             z: dataPoints[s][2],
-          });
+          };
+          rawPoints[s] = rawPoint;
+          rawDataPointSets[s] = rawPoint;
           maxX = (dataPoints[s][0] > maxX) ? dataPoints[s][0] : maxX;
           minX = (dataPoints[s][0] < minX) ? dataPoints[s][0] : minX;
           maxY = (dataPoints[s][1] > maxY) ? dataPoints[s][1] : maxY;
@@ -232,13 +237,21 @@ class App extends React.Component<Props, State> {
         const rgba = arrayColumn(rgbaLabelTuples, 0);
         // console.log(`rgba ${JSON.stringify(rgba)}`);
         const pointSetColors = Array(dataPointSets.length);
+        const backgroundRed = 0;
+        const backgroundGreen = 0;
+        const backgroundBlue = 0;
         for (let i = 0; i < dataPointClouds.length; i++) {
-          pointSetColors[i] = `rgb(${rgba[i][0]}, ${rgba[i][1]}, ${rgba[i][2]})`;
+          const alpha = 1 - rgba[i][3];
+          const red = Math.round((rgba[i][3] * (rgba[i][0] / 255) + (alpha * (backgroundRed / 255)))); // rgba[i][0];
+          const green = Math.round((rgba[i][3] * (rgba[i][1] / 255) + (alpha * (backgroundGreen / 255)))); // rgba[i][1];
+          const blue = Math.round((rgba[i][3] * (rgba[i][2] / 255) + (alpha * (backgroundBlue / 255)))); // rgba[i][2];
+          pointSetColors[i] = `rgb(${red}, ${green}, ${blue})`; // alpha component scales rgb
         }
         // console.log(`pointSetColors ${JSON.stringify(pointSetColors)}`);
 
         self.setState({
           pointSets: dataPointSets,
+          rawPointSets: rawDataPointSets,
           setColors: pointSetColors,
         }, () => {
           self.initializeScene();
@@ -589,12 +602,13 @@ class App extends React.Component<Props, State> {
     // console.log(`handleIntersectionEvent ${msg} ${JSON.stringify(data, null, 2)}`);
     const tooltipRef = this.tooltipRef.current;
     if (tooltipRef) {
-      const position = data.userData.position;
+      const setIndex = data.userData.setIndex;
       const absolutePointIndex = data.userData.absolutePointIndex;
       const uuid = data.uuid;
-      const x = position.x.toPrecision(3);
-      const y = position.y.toPrecision(3);
-      const z = position.z.toPrecision(3);
+      // console.log(`this.state.rawPointSets[${setIndex}] ${JSON.stringify(this.state.rawPointSets[setIndex])}`);
+      const x = this.state.rawPointSets[setIndex].x.toPrecision(3);
+      const y = this.state.rawPointSets[setIndex].y.toPrecision(3);
+      const z = this.state.rawPointSets[setIndex].z.toPrecision(3);
       // highlight and show tooltip
       if (!this.state.currentSelectedAbsolutePointIndices.has(absolutePointIndex)) {
         const newCurrentSelectedAbsolutePointIndices = new Set(this.state.currentSelectedAbsolutePointIndices).add(absolutePointIndex);
